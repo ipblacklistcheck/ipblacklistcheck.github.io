@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>IP Blacklist Checker — Check an IP or Domain Against Public DNS Blacklists</title><meta name="description" content="Check an IP address or domain against well-known public DNS blacklists (Spamhaus, SpamCop, SORBS, CBL). Indicative results, clear explanations, and removal guides.">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="canonical" href="https://ipblacklistcheck.github.io/">
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#1e293b;background:#fff;line-height:1.65}
+a{color:#0f766e;text-decoration:none}a:hover{text-decoration:underline}
+header{border-bottom:1px solid #e2e8f0;padding:28px 20px 18px;max-width:760px;margin:0 auto}
+header .brand{font-size:22px;font-weight:700;color:#0f172a;letter-spacing:-.02em}
+header nav{margin-top:10px;font-size:14px;display:flex;gap:18px;flex-wrap:wrap}
+main{max-width:760px;margin:0 auto;padding:28px 20px 60px}
+h1{font-size:32px;line-height:1.2;color:#0f172a;letter-spacing:-.02em;margin:0 0 12px}
+h2{font-size:22px;color:#0f172a;margin:32px 0 10px}h3{font-size:17px;color:#0f172a;margin:22px 0 8px}
+p{margin:0 0 14px}.lead{font-size:18px;color:#475569}
+.card{border:1px solid #e2e8f0;border-radius:10px;padding:22px;margin:22px 0;background:#f8fafc}
+.toolbox{border:1px solid #cbd5e1;border-radius:12px;padding:24px;background:#fff}
+label{display:block;font-weight:600;margin:14px 0 6px;font-size:14px}
+input[type=text],input[type=url],textarea,select{width:100%;padding:11px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:16px;font-family:inherit}
+button{background:#0f766e;color:#fff;border:0;padding:12px 20px;border-radius:8px;font-size:16px;cursor:pointer;margin-top:14px}
+button:hover{background:#0d5c56}.muted{color:#64748b;font-size:14px}.small{font-size:13px;color:#64748b}
+.result{margin-top:18px;padding:16px;border-radius:8px;border:1px solid #e2e8f0;background:#f8fafc;white-space:pre-wrap;word-break:break-word}
+.listed{color:#b91c1c;font-weight:700}.clean{color:#15803d;font-weight:700}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media(max-width:640px){.grid{grid-template-columns:1fr}h1{font-size:26px}}
+.article-card{border-top:1px solid #e2e8f0;padding:18px 0;display:flex;gap:16px}
+.article-card img{width:120px;height:80px;object-fit:cover;border-radius:8px;flex-shrink:0}
+footer{border-top:1px solid #e2e8f0;padding:24px 20px;text-align:center;color:#64748b;font-size:14px}
+img.hero{width:100%;height:auto;border-radius:10px;margin:16px 0}
+table{width:100%;border-collapse:collapse;margin:14px 0}td,th{border:1px solid #e2e8f0;padding:9px;text-align:left;font-size:14px}
+.note{background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:14px 16px;margin:18px 0;font-size:14px}
+.checklist label{font-weight:400;display:flex;gap:8px;align-items:flex-start;margin:10px 0}
+</style></head>
+<body><header><div class="brand"><a href="/" style="color:#0f172a">IP Blacklist Checker</a></div>
+<p class="muted" style="margin:6px 0 0">Check IPs and domains against public DNS blacklists. Clear, honest results.</p>
+<nav><a href="/">Home</a><a href="/tools/domain-blacklist-check.html">Domain Check</a><a href="/tools/dns-lookup.html">DNS Lookup</a><a href="/tools/reverse-dns-lookup.html">Reverse DNS</a><a href="/tools/ip-reputation-guide.html">Reputation Guide</a><a href="/about.html">About</a><a href="/contact.html">Contact</a></nav></header>
+<main>
+<h1>IP Blacklist Checker</h1>
+<p class="lead">Enter an IP address or a domain. We check it against well-known public DNS blacklists and tell you, list by list, whether it is listed.</p>
+<div class="note"><strong>Indicative results, not a verdict.</strong> This tool queries a few well-known public DNSBLs from your browser using DNS-over-HTTPS. A full reputation check needs a dedicated service that covers many more lists, plus your mail logs and postmaster data. A clean result here does not guarantee delivery, and a listing here needs investigation before you act on it.</div>
+<div class="toolbox">
+<label for="q">IP address or domain</label>
+<input type="text" id="q" placeholder="e.g. 203.0.113.45 or example.com" autocomplete="off">
+<button onclick="checkIP()">Check blacklist status</button>
+<button onclick="useMyIP()" style="background:#334155">Use my IP</button>
+<div id="out" class="result" style="display:none"></div>
+<p class="small">How it works: for an IP we reverse its octets and query each DNSBL via Google DNS-over-HTTPS (https://dns.google/resolve). For a domain we first resolve its A record, then check that IP. Barracuda may block unauthenticated queries; a timeout there means unknown, not clean.</p>
+</div>
+<script>
+async function doh(name,type){const r=await fetch('https://dns.google/resolve?name='+encodeURIComponent(name)+'&type='+(type||'A'));return r.json();}
+function rev(ip){return ip.split('.').reverse().join('.');}
+function isIP(s){return /^(\d{1,3}\.){3}\d{1,3}$/.test(s);}
+async function resolveDomain(d){const j=await doh(d,'A');if(j.Answer&&j.Answer.length)return j.Answer[0].data;throw new Error('No A record found for '+d);}
+async function checkOne(ip,zone){try{const j=await doh(rev(ip)+'.'+zone,'A');if(j.Answer&&j.Answer.length)return {listed:true,code:j.Answer[0].data};return {listed:false};}catch(e){return {error:true};}}
+const LISTS=[["zen.spamhaus.org","Spamhaus Zen"],["bl.spamcop.net","SpamCop"],["dnsbl.sorbs.net","SORBS"],["cbl.abuseat.org","CBL"],["b.barracudacentral.org","Barracuda"],["dnsbl-1.uceprotect.net","UCEPROTECT L1"]];
+async function checkIP(){
+ const q=document.getElementById('q').value.trim();const out=document.getElementById('out');out.style.display='block';
+ if(!q){out.textContent='Enter an IP address or domain first.';return;}
+ out.textContent='Checking… please wait.';
+ try{let ip=q;let note='';
+  if(!isIP(q)){ip=await resolveDomain(q);note='Domain '+q+' resolves to '+ip+'.\n\n';}
+  let lines=note+'Results for '+ip+' (indicative only):\n';
+  for(const [zone,name] of LISTS){const r=await checkOne(ip,zone);lines+='\n'+name+' ('+zone+'): '+(r.error?'Unknown — query failed, retry later':r.listed?'LISTED (code '+r.code+') — see the removal guide':'Not listed');}
+  lines+='\n\nIf any list shows LISTED, read our guide on how to get removed, and fix the cause before requesting removal.';
+  out.textContent=lines;
+ }catch(e){out.textContent='Error: '+e.message;}
+}
+async function useMyIP(){try{const r=await fetch('https://api.ipify.org?format=json');const j=await r.json();document.getElementById('q').value=j.ip;checkIP();}catch(e){document.getElementById('out').style.display='block';document.getElementById('out').textContent='Could not detect your IP. Enter it manually.';}}
+</script>
+<h2>Other tools</h2>
+<div class="grid">
+<div class="card"><h3><a href="/tools/domain-blacklist-check.html">Domain Blacklist Check</a></h3><p>Check a domain by resolving it first, then testing its IP against the same public lists.</p></div>
+<div class="card"><h3><a href="/tools/dns-lookup.html">DNS Lookup</a></h3><p>Look up A, MX, TXT, NS, and CNAME records for any domain via DNS-over-HTTPS.</p></div>
+<div class="card"><h3><a href="/tools/reverse-dns-lookup.html">Reverse DNS Lookup</a></h3><p>Find the PTR hostname for an IP address and check it resolves back correctly.</p></div>
+<div class="card"><h3><a href="/tools/ip-reputation-guide.html">IP Reputation Guide</a></h3><p>A practical checklist of the signals that build or damage sender reputation.</p></div>
+</div>
+<h2>Guides</h2>
+<div class="article-card"><img src="/images/what-is-ip-blacklist.jpg" alt="Server room with network cables and a warning sign about IP blacklisting" loading="lazy"><div><h3 style="margin:0 0 6px"><a href="/guides/what-is-ip-blacklist.html">What Is an IP Blacklist? A Plain-English Guide</a></h3><p class="muted" style="margin:0">An IP blacklist is a list of IP addresses flagged for spam or abuse. Learn how blacklists work, who runs them, and what a listing means for your email and website.</p></div></div>
+<div class="article-card"><img src="/images/how-to-check-ip-blacklist.jpg" alt="Person checking an IP address on a laptop screen with a blacklist report" loading="lazy"><div><h3 style="margin:0 0 6px"><a href="/guides/how-to-check-ip-blacklist.html">How to Check If Your IP Is Blacklisted (Step by Step)</a></h3><p class="muted" style="margin:0">Check your IP against public DNS blacklists in minutes. Follow this step-by-step method, learn what each result means, and know what to do next.</p></div></div>
+<div class="article-card"><img src="/images/how-to-remove-ip-from-blacklist.jpg" alt="Laptop showing a delisting request form and a clean email inbox" loading="lazy"><div><h3 style="margin:0 0 6px"><a href="/guides/how-to-remove-ip-from-blacklist.html">How to Get Your IP Removed from a Blacklist</a></h3><p class="muted" style="margin:0">Removed from a blacklist step by step: fix the cause, gather evidence, submit a delisting request, and monitor afterwards. What works, what delays removal, and what to avoid.</p></div></div>
+<div class="article-card"><img src="/images/why-ip-blacklisted-causes.jpg" alt="Warning triangle over a mail server with spam messages being blocked" loading="lazy"><div><h3 style="margin:0 0 6px"><a href="/guides/why-ip-blacklisted-causes.html">Why Your IP Got Blacklisted: The 8 Most Common Causes</a></h3><p class="muted" style="margin:0">The eight most common reasons IPs get blacklisted, from compromised mailboxes to shared hosting neighbours, and how to identify which one affected you.</p></div></div>
+<div class="article-card"><img src="/images/dnsbl-explained.jpg" alt="Diagram style photo of DNS servers and network routing equipment" loading="lazy"><div><h3 style="margin:0 0 6px"><a href="/guides/dnsbl-explained.html">DNSBL Explained: How DNS Blacklists Actually Work</a></h3><p class="muted" style="margin:0">DNSBLs are DNS-based blacklists. Learn how a DNS query becomes a listing check, what the response codes mean, and why this design is so fast.</p></div></div>
+<div class="article-card"><img src="/images/spamhaus-zen-explained.jpg" alt="Close-up of a computer screen showing security and spam filtering data" loading="lazy"><div><h3 style="margin:0 0 6px"><a href="/guides/spamhaus-zen-explained.html">Spamhaus Zen Explained: What the World's Most-Used DNSBL Checks</a></h3><p class="muted" style="margin:0">Spamhaus Zen combines three Spamhaus lists in one query. Learn what SBL, XBL, and PBL each cover and how to interpret a Zen result.</p></div></div>
+<div class="article-card"><img src="/images/email-deliverability-blacklist.jpg" alt="Email inbox on a laptop with some messages marked as spam" loading="lazy"><div><h3 style="margin:0 0 6px"><a href="/guides/email-deliverability-blacklist.html">Email Deliverability and Blacklists: Why Good Mail Lands in Spam</a></h3><p class="muted" style="margin:0">Blacklists are only one part of deliverability. Learn how reputation, authentication, engagement, and content together decide whether your mail reaches the inbox.</p></div></div>
+<div class="article-card"><img src="/images/blacklist-vs-blocklist.jpg" alt="Two lists on paper, one labelled allowed and one labelled blocked" loading="lazy"><div><h3 style="margin:0 0 6px"><a href="/guides/blacklist-vs-blocklist.html">Blacklist vs Blocklist vs Denylist: What Is the Difference?</a></h3><p class="muted" style="margin:0">Blacklist, blocklist, and denylist are often used for the same thing, but the terms have different histories. Learn what each means and which to use.</p></div></div>
+<div class="article-card"><img src="/images/shared-ip-blacklist-risks.jpg" alt="Row of apartment buildings sharing one mailbox, illustrating shared IP hosting" loading="lazy"><div><h3 style="margin:0 0 6px"><a href="/guides/shared-ip-blacklist-risks.html">Shared IP Blacklist Risks: When a Neighbour Gets You Listed</a></h3><p class="muted" style="margin:0">Shared hosting and shared mail IPs are cheap, but one bad neighbour can list everyone. Learn the risks, the warning signs, and your options.</p></div></div>
+<div class="article-card"><img src="/images/check-domain-blacklist.jpg" alt="Magnifying glass over a domain name on a computer screen" loading="lazy"><div><h3 style="margin:0 0 6px"><a href="/guides/check-domain-blacklist.html">How to Check If a Domain Is Blacklisted</a></h3><p class="muted" style="margin:0">Domains can be blacklisted too, on URI lists and domain reputation lists. Learn how to check a domain, read the results, and clear a domain listing.</p></div></div>
+<div class="article-card"><img src="/images/prevent-ip-blacklisting.jpg" alt="Shield protecting a mail server from spam and threats" loading="lazy"><div><h3 style="margin:0 0 6px"><a href="/guides/prevent-ip-blacklisting.html">How to Prevent Your IP from Being Blacklisted</a></h3><p class="muted" style="margin:0">Prevention beats removal. Build a practical routine of authentication, secure accounts, clean lists, and monitoring that keeps your IP off blacklists.</p></div></div>
+<div class="article-card"><img src="/images/blacklist-removal-request-guide.jpg" alt="Person writing a formal request letter at a desk with a laptop" loading="lazy"><div><h3 style="margin:0 0 6px"><a href="/guides/blacklist-removal-request-guide.html">Writing a Blacklist Removal Request That Gets Approved</a></h3><p class="muted" style="margin:0">A good delisting request is short, honest, and specific. Learn what operators want to see, what to include, and the mistakes that get requests refused.</p></div></div>
+<div class="article-card"><img src="/images/understanding-blacklist-listings.jpg" alt="Analyst reviewing a list of IP addresses and severity ratings on screen" loading="lazy"><div><h3 style="margin:0 0 6px"><a href="/guides/understanding-blacklist-listings.html">Understanding Blacklist Listings: Codes, Severity, and What They Mean</a></h3><p class="muted" style="margin:0">Not all listings are equal. Learn how to read listing codes, judge severity, and prioritise which listings to fix first.</p></div></div>
+<div class="article-card"><img src="/images/ip-reputation-explained.jpg" alt="Gauge and dashboard showing sender reputation score for a mail server" loading="lazy"><div><h3 style="margin:0 0 6px"><a href="/guides/ip-reputation-explained.html">IP Reputation Explained: How Mail Providers Judge Your Server</a></h3><p class="muted" style="margin:0">IP reputation is the hidden score behind email delivery. Learn what builds it, what damages it, and how to rebuild a damaged reputation.</p></div></div>
+<div class="article-card"><img src="/images/reverse-dns-and-blacklists.jpg" alt="Network cable connected to a server with a hostname label" loading="lazy"><div><h3 style="margin:0 0 6px"><a href="/guides/reverse-dns-and-blacklists.html">Reverse DNS and Blacklists: Why Your PTR Record Matters</a></h3><p class="muted" style="margin:0">Reverse DNS links your IP to a hostname. Learn why mail servers check it, how to set it correctly, and how a missing PTR record hurts delivery.</p></div></div>
+<div class="article-card"><img src="/images/blacklists-and-spam-filters.jpg" alt="Layers of email filters screening incoming messages on a screen" loading="lazy"><div><h3 style="margin:0 0 6px"><a href="/guides/blacklists-and-spam-filters.html">Blacklists and Spam Filters: How They Work Together</a></h3><p class="muted" style="margin:0">Blacklists are one layer in a spam filter, not the whole filter. Learn how DNSBLs, authentication, content scoring, and reputation combine to judge mail.</p></div></div>
+<div class="article-card"><img src="/images/dedicated-vs-shared-ip-email.jpg" alt="Two mail servers side by side, one private and one shared" loading="lazy"><div><h3 style="margin:0 0 6px"><a href="/guides/dedicated-vs-shared-ip-email.html">Dedicated vs Shared IP for Email: Which Should You Choose?</a></h3><p class="muted" style="margin:0">A dedicated IP gives you control; a shared IP gives you shared reputation. Compare costs, warm-up, risks, and which option fits your sending volume.</p></div></div>
+<div class="article-card"><img src="/images/how-long-blacklist-removal-takes.jpg" alt="Calendar and clock showing waiting time for blacklist removal" loading="lazy"><div><h3 style="margin:0 0 6px"><a href="/guides/how-long-blacklist-removal-takes.html">How Long Does Blacklist Removal Take? Realistic Timelines</a></h3><p class="muted" style="margin:0">Removal takes hours to weeks depending on the list, the cause, and your response. Learn realistic timelines for major lists and what speeds things up.</p></div></div>
+<div class="article-card"><img src="/images/blacklist-monitoring-tools.jpg" alt="Monitoring dashboard with alerts for IP blacklist status" loading="lazy"><div><h3 style="margin:0 0 6px"><a href="/guides/blacklist-monitoring-tools.html">Blacklist Monitoring Tools: How to Watch Your IP Automatically</a></h3><p class="muted" style="margin:0">Manual checks catch problems late. Learn how monitoring tools work, what to monitor, and how to set up alerts that warn you the day a listing appears.</p></div></div>
+<div class="article-card"><img src="/images/blacklist-myths-debunked.jpg" alt="Myth versus fact concept with a checklist on a desk" loading="lazy"><div><h3 style="margin:0 0 6px"><a href="/guides/blacklist-myths-debunked.html">IP Blacklist Myths Debunked: 7 Things People Get Wrong</a></h3><p class="muted" style="margin:0">Seven common myths about IP blacklists, from the idea that only spammers get listed to the belief that changing your IP fixes everything.</p></div></div>
+<p class="muted">All guides are original, practical, and written to help you diagnose and fix real delivery problems.</p></main>
+<footer><p>IP Blacklist Checker &middot; <a href="/privacy.html">Privacy</a> &middot; <a href="/disclaimer.html">Disclaimer</a> &middot; <a href="/about.html">About</a> &middot; <a href="/contact.html">Contact</a></p><p class="small">Results are indicative only. A full check needs a dedicated reputation service.</p></footer></body></html>
